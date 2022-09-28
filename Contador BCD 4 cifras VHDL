@@ -1,0 +1,152 @@
+library IEEE;
+use IEEE.STD_LOGIC_1164.ALL;
+use IEEE.NUMERIC_STD.ALL;
+
+library WORK;
+use WORK.utilidades.all;
+
+
+entity contadorBCD is
+port(
+--Anodo es un vector que contendrá la información de qué display estará encendido en cada momento para poder hacer la multiplexacion. sal_7_segs es el vector que 
+--contiene los segmentos que tienen que encenderse en el display. De tal manera que en cada momento estamos mandando el mismo número a los 4 
+--displays, pero como solo tenemos uno encendido cada vez y cambiamos muy rápido de display con su respectivo número, a un humano le parecen
+-- que están los 4 encendidos y con un número distinto. Concretamente cambiamos de display cada 2.5ms.
+	signal clk			:	in		std_logic; --reloj de la FPGA a 50MHz 
+	signal entrada			:	in		std_logic; -- si hay un flanco de subida en esta entrada aumenta o decrementa el valor del contador dependiendo del valor de up_down
+	signal reset_asin               :       in              std_logic; --reset asíncrono
+	signal reset_sin                :       in              std_logic; --reset síncrono	
+	signal enable                   :       in              std_logic; --si esta variable vale '0' el contador ni incrementa ni decrementa
+	signal up_down                  :       in              std_logic;--si esta variable vale 1, el contador  incrementa su valor, si es 0 lo decrementa
+	signal load			:       in 		std_logic;--se carga el dato si load=1
+	signal dato_cargar_ud		:	in		std_logic_vector(3 downto 0);--el dato a cargar es introducido en BCD y aqui van las unidades
+	signal dato_cargar_de		:	in		std_logic_vector(3 downto 0);--aqui las decenas
+	signal dato_cargar_ce		:	in		std_logic_vector(3 downto 0);--aquí las centenas
+	signal dato_cargar_mil		:	in		std_logic_vector(3 downto 0);--aqui las unidades de millar
+	signal anodo		:	out 	std_logic_vector(3 downto 0);
+	signal sal_7_segs	:	out 	std_logic_vector(7 downto 0)
+);
+end entity contadorBCD;
+
+architecture unica of contadorBCD is
+	type conteov is array (3 downto 0) of natural range 0 to 2**4-1;--crea un array de 4 elementos y cada elemento es un natural que puede ir de 0-15
+	signal contador_an 			: 	natural range 0 to 2**19-1;
+	signal s_anodo				: 	std_logic_vector(3 downto 0);
+	signal s_catodo				: 	std_logic_vector(7 downto 0);
+	signal cuenta_fund			: 	natural range 0 to 2**24-1;
+	signal conteov1 			:	conteov;	--array en el que van los valores del contador
+
+begin
+
+
+
+process(reset_asin,entrada,s_anodo) is 
+begin
+	if (reset_asin='1') then --reset asincrono
+		conteov1(0) <= 0;
+		conteov1(1) <= 0;
+		conteov1(2) <= 0;
+		conteov1(3) <= 0;
+	elsif (RISING_EDGE(entrada)) then
+		if reset_sin = '0' and load = '0' then
+			if (enable and up_down) = '1' then --si el enable está activo y estamos contando hacia arriba incrementamos conteo
+				conteov1(0) <= conteov1(0) + 1; -- conteo++
+				if(conteov1(0)=9) then          --para que el contador esté en base 10
+					conteov1(0) <= 0;
+					if(conteov1(1)=9) then
+						conteov1(1) <= 0;
+						if(conteov1(2) = 9) then
+							conteov1(2) <= 0;
+							if(conteov1(3) = 9) then
+								conteov1(3) <= 0;
+							else
+								conteov1(3) <= conteov1(3)+1;
+							end if;
+						else
+							conteov1(2) <= conteov1(2)+1;
+						end if;
+					else
+						conteov1(1) <= conteov1(1)+1;
+					end if;
+				else 
+					conteov1(0) <= conteov1(0)+1;
+				end if;
+			elsif (enable and not(up_down)) = '1' then --si el enable está activo y estamos contando hacia abajo, decrementamos conteo
+				if(conteov1(0)=0) then
+					conteov1(0) <= 9;
+					if(conteov1(1)=0) then
+						conteov1(1) <= 9;
+						if(conteov1(2) = 0) then
+							conteov1(2) <= 9;
+							if(conteov1(3) = 0) then
+								conteov1(3) <= 9;
+							else
+								conteov1(3) <= conteov1(3)-1;
+							end if;
+						else
+							conteov1(2) <= conteov1(2)-1;
+						end if;
+					else
+						conteov1(1) <= conteov1(1)-1;
+					end if;
+				else 
+					conteov1(0) <= conteov1(0)-1;
+				end if;
+			elsif enable = '0' then
+				--no cambia el valor del contador
+			end if;
+		elsif reset_sin = '0' and load = '1' then --carga del dato
+			conteov1(0) <= to_integer(unsigned(dato_cargar_ud));
+			conteov1(1) <= to_integer(unsigned(dato_cargar_de));
+			conteov1(2) <= to_integer(unsigned(dato_cargar_ce));
+			conteov1(3) <= to_integer(unsigned(dato_cargar_mil));
+		elsif reset_sin = '1' then --reset sincrono
+			conteov1(0) <= 0;
+			conteov1(1) <= 0;
+			conteov1(2) <= 0;
+			conteov1(3) <= 0;
+			anodo <= "0000";
+		end if;
+	end if;
+end process;
+
+process(reset_asin,clk,s_anodo) is   
+begin
+	if (reset_asin='1') then
+		s_anodo <= "0000";
+	elsif (RISING_EDGE(clk)) then
+		-- 500_000 -> 10 ms
+		-- 0      -124_999 2,5 ms
+		-- 125_000-249_999 2,5 ms
+		-- 250_000-374_999 2,5 ms
+		-- 375_000-499_999 2,5 ms
+		if    contador_an<125000 then
+			s_anodo <= "1110";
+			contador_an <= contador_an+1;
+			s_catodo <= conv_4bits_a_7segs_an(std_logic_vector(to_unsigned(conteov1(0),4))); --hay que hacer cast a std_logic_vector para poder usar conv_4bits_a_7_segs_an()
+		elsif contador_an<250000 then
+		   s_anodo <= "1101";
+			contador_an <= contador_an+1;
+			s_catodo <= conv_4bits_a_7segs_an(std_logic_vector(to_unsigned(conteov1(1),4))); 
+		elsif contador_an<375000 then
+		   s_anodo <= "1011";
+			contador_an <= contador_an+1;
+			s_catodo <= conv_4bits_a_7segs_an(std_logic_vector(to_unsigned(conteov1(2),4))); 
+		elsif contador_an<499999 then
+		   s_anodo <= "0111";
+			contador_an <= contador_an+1;
+			s_catodo <= conv_4bits_a_7segs_an(std_logic_vector(to_unsigned(conteov1(3),4)));
+		else
+			s_anodo <= "0111";
+			contador_an <= 0;
+
+			s_catodo <= conv_4bits_a_7segs_an("1111");
+		end if;
+	end if;
+end process;
+
+sal_7_segs <= s_catodo;
+anodo <= s_anodo;
+
+
+end architecture;
