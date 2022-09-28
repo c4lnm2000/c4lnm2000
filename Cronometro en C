@@ -1,0 +1,143 @@
+/*
+ * GccApplication2.c
+ *
+ * Created: 25/11/2021 12:09:38
+ * Author : alumnoii14
+ */
+//Un problema que puede tener la práctica es que haya "rebote" en el pulsador es decir, que se detecten más flancos de los que debería.
+#define F_CPU 16000000UL
+#include <avr/io.h>
+#include <avr/interrupt.h>
+#include <math.h>
+
+
+unsigned int auxiliar = 0; //variable que vamos aumentando en 1 en cada interrupcion periodica con T=16MHz/256
+
+//TIENEN QUE SER VARIABLE GLOBALES 
+char decimas = 0;
+char unidades = 0;
+char decenas = 0;
+char run = 1; //variable para saber si el cronometro está parado
+char displayCongelado = 0; //variable que se usa para saber si estamos congelando el display aunque la cuenta siga corriendo
+char decimasLap = 0;//variables utilizadas para tomar el valor del cronómetro y que siga corriendo
+char unidadesLap = 0;
+char decenasLap = 0;
+
+
+//vamos a usar las external interrupt 0 y 1 para manejar los pulsadores
+ISR(TIMER0_COMPA_vect){
+	if(run) auxiliar++; //solo sigue la cuenta si tenemos el cronómetro en marcha
+}
+
+ISR(INT0_vect){  //interrupcion que maneja el pulsador 1
+	if(run == 0) run=1;
+	else run=0;
+
+}
+
+ISR(INT1_vect){  //interrupcion que maneja el pulsador 2
+	if(run == 0){//RST
+		decimas = 0;
+		unidades = 0;
+		decenas = 0;
+	}
+	if(run == 1){//LAP
+		decimasLap = decimas;
+		unidadesLap = unidades;
+		decenasLap = decenas;
+		if(displayCongelado==0) displayCongelado = 1;
+		else displayCongelado=0;
+
+	}
+}
+
+
+int main(void)
+{
+	const char Salidas7segmentos[16] = {
+	0b11111100,//0
+	0b01100000,//1
+	0b11011010,//2
+	0b11110010,//3
+	0b01100110,//4
+	0b10110110, //5
+	0b10111110,//6
+	0b11100000,//7
+	0b11111110,//8
+	0b11110110,//9
+	0b11101110,//A
+	0b00111110,//b
+	0b10011100,//C
+	0b01111010,//d
+	0b10011110,//E
+	0b10001110,//F
+	};
+	char enableDisplays = 0;//variable que puede tomar valores 0b00000001, 0b00000010, 0b00000100 para ir encendiendo un display u otro
+	char i = 0;
+
+	DDRB = 0xFF;	//hay que ponerlo a 1 para que funcione el pin de comparacion con el contador
+	DDRC = 0xFF;	//Salida para los enable de los multiplexores PC0, PC1 Y PC2 pines 37,36 y 35 respectivamente
+	DDRL = 0xFF;	//Salida, Digital Pin 49-42 -> PL0-PL7 (8 salidas para el display)
+	DDRD = DDRD && 0b11111100; //PD0,1,SCL y SDA;
+	EICRA = 0b00001111; //interrupciones externas configuradas para que salten con flanco de subida
+	EIMSK = 0b00000011; //enable de las interrupciones externas 1 y 0
+
+	TCCR0A = 0b10000010;//los dos bits mas significativos están así para hacer clear de OC0A que es el valor actual del contador cuando hay compare match
+	//y todo lo demas son 0 porque n usamos el OC0B y porque queremos el modo de operación CTC del periférico. Excepto el WGM1 que esta a 1 para modo CTC.
+
+	OCR0A = 49;
+	TCCR0B = 0b00000100;//tenemos que poner prescaler de Fclk/256
+	TIMSK0 = 0b00000010;//solo tenemos activado el enable de la interrupcion de la comparacion con el contador A
+	sei();
+
+
+    /* Replace with your application code */
+    while (1)
+    {
+
+		if(auxiliar == 125 && run){ //ha pasado 0.1s
+			decimas++;
+			auxiliar=0;
+			if(decimas == 10){
+				unidades++;
+				decimas = 0;
+				if(unidades == 10){
+					decenas++;
+					unidades=0;
+					if(decenas == 6){
+						decenas = 0;
+					}
+
+				}
+
+			}
+
+		}
+
+		//visualizacion
+			if(i==0) enableDisplays = 0b11111110;
+			if(i==1) enableDisplays = 0b11111101;
+			if(i==2) enableDisplays = 0b11111011;
+			i++;
+			if(i == 3) i=0;
+
+			PORTC = 0xFF;//apagamos los displays para cambiar de valor que enviamos y que no se vean sombras en los demás
+
+			if(displayCongelado){
+				if(enableDisplays == 0b11111110) PORTL = Salidas7segmentos[decimasLap];
+				if(enableDisplays == 0b11111101) PORTL = Salidas7segmentos[unidadesLap];
+				if(enableDisplays == 0b11111011) PORTL = Salidas7segmentos[decenasLap];
+			}
+			else{
+				if(enableDisplays == 0b11111110) PORTL =  Salidas7segmentos[decimas];
+				if(enableDisplays == 0b11111101) PORTL = Salidas7segmentos[unidades];
+				if(enableDisplays == 0b11111011) PORTL =Salidas7segmentos[decenas];
+			}
+
+			PORTC = enableDisplays;
+
+
+
+
+    }
+}
