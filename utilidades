@@ -1,0 +1,66 @@
+--
+--	Package File Template
+--
+--	Purpose: This package defines supplemental types, subtypes, 
+--		 constants, and functions 
+--
+--   To use any of the example code shown below, uncomment the lines and modify as necessary
+--
+
+library IEEE;
+use IEEE.STD_LOGIC_1164.all;
+
+package utilidades is
+
+constant CONTEO_INICIAL : natural := 10000000;
+constant PASO_CONTEO 	: natural := 5000000;
+
+pure function CONTEO(arg : in natural) return natural;
+pure function conv_4bits_a_7segs_an(arg : in std_logic_vector(3 downto 0)) return std_logic_vector;
+pure function conv_4bits_a_7segs_ca(arg : in std_logic_vector(3 downto 0)) return std_logic_vector;
+
+end package utilidades;
+
+-- en este archivo están definidas funciones que usamos, concretamente usamos la llamada conv_4bits_a_7segs_an(), que es 
+-- el resultado de aplicar la operación lógica NOT a conv_4bits_a_7segs_an(). Esta última función es una tabla que nos
+-- da el valor correspondiente para alimentar a los displays a partir de un número que queremos representar en BCD.
+
+package body utilidades is
+
+pure function CONTEO(arg : in natural) return natural is
+	variable ret : natural := (CONTEO_INICIAL+(arg*PASO_CONTEO));
+begin
+	return  ret;
+end function CONTEO;
+
+pure function conv_4bits_a_7segs_ca(arg : in std_logic_vector(3 downto 0)) return std_logic_vector is
+	VARIABLE ret : std_logic_vector(7 downto 0);
+begin
+	case (arg) is          --"abcdefgp"
+		when "0000" => ret := "11111100";
+		when "0001" => ret := "01100000";
+		when "0010" => ret := "11011010";
+		when "0011" => ret := "11110010";
+		when "0100" => ret := "01100110";
+		when "0101" => ret := "10110110";
+		when "0110" => ret := "10111110";
+		when "0111" => ret := "11100000";
+		when "1000" => ret := "11111110";
+		when "1001" => ret := "11100110";
+		when "1010" => ret := "11111010";
+		when "1011" => ret := "00111110";
+		when "1100" => ret := "00011010";
+		when "1101" => ret := "11011010";
+		when "1110" => ret := "11001110";
+		when "1111" => ret := "00011110";
+		when others => ret := "00000000";
+	end case;
+	return ret;
+end function conv_4bits_a_7segs_ca;
+
+pure function conv_4bits_a_7segs_an(arg : in std_logic_vector(3 downto 0)) return std_logic_vector is
+begin
+	return (not(conv_4bits_a_7segs_ca(arg)));
+end function conv_4bits_a_7segs_an;
+ 
+end package body utilidades;
